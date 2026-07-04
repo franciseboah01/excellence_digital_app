@@ -3,6 +3,9 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../constants/api_constants.dart';
 import 'api_exceptions.dart';
 
+// Clé globale de navigation (doit être en dehors de la classe)
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 class ApiClient {
   late final Dio dio;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
@@ -37,9 +40,7 @@ class ApiClient {
     ]);
   }
 
-  // Méthodes HTTP
-  Future<Response> get(String path,
-      {Map<String, dynamic>? queryParameters}) async {
+  Future<Response> get(String path, {Map<String, dynamic>? queryParameters}) async {
     try {
       final response = await dio.get(path, queryParameters: queryParameters);
       return _handleResponse(response);
@@ -90,8 +91,7 @@ class AuthInterceptor extends Interceptor {
   AuthInterceptor(this._secureStorage);
 
   @override
-  Future<void> onRequest(
-      RequestOptions options, RequestInterceptorHandler handler) async {
+  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
     final token = await _secureStorage.read(key: 'auth_token');
     if (token != null) {
       options.headers['Authorization'] = 'Bearer $token';
@@ -104,9 +104,7 @@ class AuthInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (err.response?.statusCode == 401) {
       _secureStorage.deleteAll();
-      // Rediriger vers login
-      navigatorKey.currentState
-          ?.pushNamedAndRemoveUntil('/login', (route) => false);
+      navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (route) => false);
     }
     handler.next(err);
   }
@@ -118,7 +116,6 @@ class ConnectivityInterceptor extends Interceptor {
   void onError(DioException err, ErrorInterceptorHandler handler) {
     if (err.type == DioExceptionType.connectionError ||
         err.type == DioExceptionType.connectionTimeout) {
-      // Notifier l'utilisateur
       print('⚠️ Pas de connexion internet');
     }
     handler.next(err);
