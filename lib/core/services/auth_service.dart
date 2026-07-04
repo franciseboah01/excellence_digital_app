@@ -1,34 +1,50 @@
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../network/api_client.dart';
 import '../network/api_constants.dart';
+import '../network/api_exceptions.dart';
 import '../models/user.dart';
 
 class AuthService {
-  final ApiClient _apiClient = ApiClient();
+  final ApiClient _apiClient = ApiClient.instance;
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
-  
+
+  static const _tokenKey = 'auth_token';
+  static const _userKey = 'user_data';
+  static const _rolesKey = 'user_roles';
+
   // Login
   Future<User> login(String email, String password) async {
-    final response = await _apiClient.post(
-      ApiConstants.login,
-      data: {
-        'email': email,
-        'password': password,
-        'device_name': 'mobile_app',
-      },
-    );
-    
-    final token = response.data['token'];
-    final user = User.fromJson(response.data['user']);
-    
-    // Sauvegarder le token et les données utilisateur
-    await _secureStorage.write(key: 'auth_token', value: token);
-    await _secureStorage.write(key: 'user_data', value: user.toJsonString());
-    
-    return user;
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.login,
+        data: {
+          'email': email,
+          'password': password,
+          'device_name': 'mobile_app',
+        },
+      );
+
+      final data = response.data;
+      final token = data['token'] as String;
+      final user = User.fromJson(data['user']);
+      final roles = List<String>.from(data['roles'] ?? []);
+
+      await Future.wait([
+        _secureStorage.write(key: _tokenKey, value: token),
+        _secureStorage.write(key: _userKey, value: jsonEncode(data['user'])),
+        _secureStorage.write(key: _rolesKey, value: jsonEncode(roles)),
+      ]);
+
+      return user;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(message: 'Erreur de connexion: $e');
+    }
   }
-  
+
   // Register
   Future<User> register({
     required String nom,
@@ -38,61 +54,81 @@ class AuthService {
     required String passwordConfirmation,
     String? telephone,
   }) async {
-    final response = await _apiClient.post(
-      ApiConstants.register,
-      data: {
-        'nom': nom,
-        'prenom': prenom,
-        'email': email,
-        'password': password,
-        'password_confirmation': passwordConfirmation,
-        'telephone': telephone,
-      },
-    );
-    
-    final token = response.data['token'];
-    final user = User.fromJson(response.data['user']);
-    
-    await _secureStorage.write(key: 'auth_token', value: token);
-    await _secureStorage.write(key: 'user_data', value: user.toJsonString());
-    
-    return user;
+    try {
+      final response = await _apiClient.post(
+        ApiConstants.register,
+        data: {
+          'nom': nom,
+          'prenom': prenom,
+          'email': email,
+          'password': password,
+          'password_confirmation': passwordConfirmation,
+          'telephone': telephone,
+        },
+      );
+
+      final token = response.data['token'] as String;
+      final user = User.fromJson(response.data['user']);
+
+      await _secureStorage.write(key: _tokenKey, value: token);
+      await _secureStorage.write(
+          key: _userKey, value: jsonEncode(response.data['user']));
+
+      return user;
+    } on ApiException {
+      rethrow;
+    } catch (e) {
+      throw ApiException(message: 'Erreur d\'inscription: $e');
+    }
   }
-  
+
   // Logout
   Future<void> logout() async {
     try {
       await _apiClient.post(ApiConstants.logout);
     } catch (_) {}
-    
-    await _secureStorage.delete(key: 'auth_token');
-    await _secureStorage.delete(key: 'user_data');
+    await _secureStorage.deleteAll();
   }
-  
-  // Récupérer l'utilisateur connecté
+
+  // Vérifier si connecté
+  Future<bool> isLoggedIn() async {
+    final token = await _secureStorage.read(key: _tokenKey);
+    return token != null && token.isNotEmpty;
+  }
+
+  // Récupérer l'utilisateur courant
   Future<User?> getCurrentUser() async {
     try {
-      final userData = await _secureStorage.read(key: 'user_data');
+      final userData = await _secureStorage.read(key: _userKey);
       if (userData != null) {
-        return User.fromJsonString(userData);
+        return User.fromJson(jsonDecode(userData));
       }
-      
-      // Si pas de données locales, récupérer depuis l'API
+
       final response = await _apiClient.get(ApiConstants.user);
       final user = User.fromJson(response.data);
-      await _secureStorage.write(key: 'user_data', value: user.toJsonString());
+      await _secureStorage.write(
+          key: _userKey, value: jsonEncode(response.data));
       return user;
     } catch (e) {
       return null;
     }
   }
-  
-  // Vérifier si l'utilisateur est connecté
-  Future<bool> isLoggedIn() async {
-    final token = await _secureStorage.read(key: 'auth_token');
-    return token != null;
+
+  // Récupérer les rôles
+  Future<List<String>> getRoles() async {
+    final rolesData = await _secureStorage.read(key: _rolesKey);
+    if (rolesData != null) {
+      return List<String>.from(jsonDecode(rolesData));
+    }
+    return [];
   }
-  
+
+  // Vérifier un rôle
+  Future<bool> hasRole(String role) async {
+    final roles = await getRoles();
+    return roles.contains(role);
+  }
+
   // Mot de passe oublié
   Future<void> forgotPassword(String email) async {
     await _apiClient.post(
@@ -100,8 +136,8 @@ class AuthService {
       data: {'email': email},
     );
   }
-  
-  // Réinitialiser le mot de passe
+
+  // Réinitialiser mot de passe
   Future<void> resetPassword({
     required String email,
     required String token,
@@ -118,20 +154,22 @@ class AuthService {
       },
     );
   }
-  
-  // Mettre à jour le profil
-  Future<User> updateProfile(Map<String, dynamic> data) async {
-    final response = await _apiClient.put(ApiConstants.updateProfile, data: data);
-    final user = User.fromJson(response.data['user']);
-    await _secureStorage.write(key: 'user_data', value: user.toJsonString());
-    return user;
-  }
 }
 
-// Provider Riverpod
+// Providers Riverpod
 final authServiceProvider = Provider<AuthService>((ref) => AuthService());
+
+final isLoggedInProvider = FutureProvider<bool>((ref) async {
+  final authService = ref.watch(authServiceProvider);
+  return authService.isLoggedIn();
+});
 
 final currentUserProvider = FutureProvider<User?>((ref) async {
   final authService = ref.watch(authServiceProvider);
   return authService.getCurrentUser();
+});
+
+final userRolesProvider = FutureProvider<List<String>>((ref) async {
+  final authService = ref.watch(authServiceProvider);
+  return authService.getRoles();
 });
