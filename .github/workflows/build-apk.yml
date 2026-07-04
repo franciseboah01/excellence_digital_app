@@ -1,0 +1,127 @@
+name: Build & Upload APK
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Type de build'
+        required: true
+        default: 'release'
+        type: choice
+        options:
+          - release
+          - debug
+
+jobs:
+  build-and-upload:
+    name: Build APK & Upload to Artifacts
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+      
+      - name: ☕ Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      
+      - name: 📱 Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.27.0'
+          channel: 'stable'
+          cache: true
+      
+      - name: 🔍 Flutter doctor
+        run: flutter doctor -v
+      
+      - name: 📦 Get dependencies
+        run: flutter pub get
+      
+      - name: 🧪 Run tests (optional)
+        run: flutter test
+        continue-on-error: true
+      
+      - name: 🔨 Build APK Release
+        if: github.event.inputs.build_type != 'debug'
+        run: |
+          flutter build apk --release --split-per-abi
+          echo "BUILD_TYPE=release" >> $GITHUB_ENV
+      
+      - name: 🔨 Build APK Debug
+        if: github.event.inputs.build_type == 'debug'
+        run: |
+          flutter build apk --debug
+          echo "BUILD_TYPE=debug" >> $GITHUB_ENV
+      
+      - name: 📊 Générer infos de build
+        run: |
+          echo "BUILD_DATE=$(date +'%d/%m/%Y %H:%M')" >> $GITHUB_ENV
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          echo "BRANCH_NAME=${{ github.ref_name }}" >> $GITHUB_ENV
+      
+      - name: 📤 Upload APK arm64-v8a
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDC-arm64-v8a-${{ env.BUILD_TYPE }}
+          path: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+          retention-days: 90
+      
+      - name: 📤 Upload APK armeabi-v7a
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDC-armeabi-v7a-${{ env.BUILD_TYPE }}
+          path: build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+          retention-days: 90
+      
+      - name: 📤 Upload APK x86_64
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDC-x86_64-${{ env.BUILD_TYPE }}
+          path: build/app/outputs/flutter-apk/app-x86_64-release.apk
+          retention-days: 90
+      
+      - name: 📤 Upload APK Universal (debug)
+        if: github.event.inputs.build_type == 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDC-universal-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
+          retention-days: 90
+      
+      - name: 📤 Upload AppBundle
+        if: github.event.inputs.build_type != 'debug'
+        run: flutter build appbundle --release
+        continue-on-error: true
+      
+      - name: 📤 Upload AAB
+        if: github.event.inputs.build_type != 'debug'
+        uses: actions/upload-artifact@v4
+        with:
+          name: EDC-AppBundle-${{ env.BUILD_TYPE }}
+          path: build/app/outputs/bundle/release/app-release.aab
+          retention-days: 90
+      
+      - name: ✅ Build Summary
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "✅ BUILD RÉUSSI !"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📱 App     : Excellence Digital Center"
+          echo "🔢 Version : 1.0.0"
+          echo "📅 Date    : ${{ env.BUILD_DATE }}"
+          echo "🔖 Branch  : ${{ env.BRANCH_NAME }}"
+          echo "🔗 Commit  : ${{ env.COMMIT_SHA }}"
+          echo "📦 Type    : ${{ env.BUILD_TYPE }}"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo ""
+          echo "📥 Télécharge les APK dans l'onglet 'Artifacts' de ce build !"
