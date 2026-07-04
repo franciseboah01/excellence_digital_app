@@ -6,8 +6,8 @@ class Service {
   final String? image;
   final double? prix;
   final bool actif;
-  final Categorie? categorie;
-  final DateTime createdAt;
+  final dynamic categorie;
+  final DateTime? createdAt;
 
   Service({
     required this.id,
@@ -18,7 +18,7 @@ class Service {
     this.prix,
     required this.actif,
     this.categorie,
-    required this.createdAt,
+    this.createdAt,
   });
 
   factory Service.fromJson(Map<String, dynamic> json) {
@@ -28,12 +28,12 @@ class Service {
       slug: json['slug'],
       description: json['description'],
       image: json['image'],
-      prix: json['prix']?.toDouble(),
+      prix: (json['prix'] as num?)?.toDouble(),
       actif: json['actif'] ?? true,
-      categorie: json['categorie'] != null ? Categorie.fromJson(json['categorie']) : null,
+      categorie: json['categorie'],
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
-          : DateTime.now(),
+          ? DateTime.tryParse(json['created_at'])
+          : null,
     );
   }
 }

@@ -8,11 +8,11 @@ class Formation {
   final String? duree;
   final String? prerequis;
   final String? statut;
-  final Module? module;
-  final List<Niveau> niveaux;
-  final List<Enseignant> enseignants;
+  final dynamic module;
+  final List<dynamic> niveaux;
+  final List<dynamic> enseignants;
   final int? inscriptionsCount;
-  final DateTime createdAt;
+  final DateTime? createdAt;
 
   Formation({
     required this.id,
@@ -28,7 +28,7 @@ class Formation {
     this.niveaux = const [],
     this.enseignants = const [],
     this.inscriptionsCount,
-    required this.createdAt,
+    this.createdAt,
   });
 
   factory Formation.fromJson(Map<String, dynamic> json) {
@@ -38,21 +38,17 @@ class Formation {
       slug: json['slug'] ?? '',
       description: json['description'],
       image: json['image'],
-      prix: json['prix']?.toDouble(),
+      prix: (json['prix'] as num?)?.toDouble(),
       duree: json['duree'],
       prerequis: json['prerequis'],
       statut: json['statut'],
-      module: json['module'] != null ? Module.fromJson(json['module']) : null,
-      niveaux: json['niveaux'] != null
-          ? List<Niveau>.from(json['niveaux'].map((x) => Niveau.fromJson(x)))
-          : [],
-      enseignants: json['enseignants'] != null
-          ? List<Enseignant>.from(json['enseignants'].map((x) => Enseignant.fromJson(x)))
-          : [],
+      module: json['module'],
+      niveaux: json['niveaux'] ?? [],
+      enseignants: json['enseignants'] ?? [],
       inscriptionsCount: json['inscriptions_count'],
       createdAt: json['created_at'] != null
-          ? DateTime.parse(json['created_at'])
-          : DateTime.now(),
+          ? DateTime.tryParse(json['created_at'])
+          : null,
     );
   }
 }
